@@ -1,65 +1,79 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 #include <SoftwareSerial.h>
-#include <MQUnifiedsensor.h> // Specific library for MQ-135
-
-// Pin connections (adjust based on your setup)
-byte board = "UNO";  // Assuming Arduino Uno
+#include <Servo.h>  // Include Servo library for motor control
+Servo motor;  // Create servo object for motor control
+SoftwareSerial sim800l(2, 3); // RX, TX for Sim800l
+LiquidCrystal_I2C lcd(0x3F, 16, 2); // I2C address 0x27, 16 columns, 2 rows
+const int motorPin = 6;  // Pin for motor control (adjust as needed)
 const int mq135Pin = A0;
-const int simRxPin = 0;
-const int simTxPin = 1;
-const int buzzerPin = 8;
-const int ledPin = 9;
+const int ledPin = 13;
+const int buzzerPin = 9;
 
-// Calibration values for MQ-135 (adjust based on your sensor)
-float Ro = 10;  // Replace with your sensor's Ro value
-
-// Threshold for gas detection (adjust as needed)
-const int gasThreshold = 300;  // Example value
-
-// Phone number for notifications
-const char* phoneNumber = "123445";
-
-MQUnifiedsensor mq135(String(board), mq135Pin, "MQ-135");
-SoftwareSerial simModule(simRxPin, simTxPin);
+int airQualityThreshold = 100;
 
 void setup() {
-  Serial.begin(9600);
-  simModule.begin(9600);
-  pinMode(buzzerPin, OUTPUT);
+  lcd.begin(16, 2);
+  pinMode(mq135Pin, INPUT);
   pinMode(ledPin, OUTPUT);
-
-  // Initialize MQ-135 sensor
-  mq135.setRegressionMethod(1); // Set regression method (check library documentation)
-  mq135.init();
-  mq135.setRL(Ro); // Set Ro value
-
-  // Initialize SIM module (replace with appropriate AT commands)
-  simModule.println("AT");
-  delay(1000);
-  simModule.println("AT+CMGF=1");  // Set SMS mode to text
-  delay(1000);
+  pinMode(buzzerPin, OUTPUT);
+  motor.attach(motorPin);  // Attach motor to pin
+  lcd.init();
+lcd.backlight();
+  lcd.print("Air Quality:");
+  sim800l.begin(9600);
+  
+  // You may need to initialize your SIM module here.
 }
 
 void loop() {
-  mq135.update(); // Update sensor readings
-  float ppm = mq135.readSensor("CO"); // Read CO concentration
+  int airQuality = analogRead(mq135Pin);
 
-  if (ppm > gasThreshold) {
-    // Send SMS notification
-    simModule.println("AT+CMGS=\"" + String(phoneNumber) + "\"");
-    delay(1000);
-    simModule.println("Gas leak detected! CO concentration: " + String(ppm) + " ppm");
-    simModule.write(26);  // ASCII code for Ctrl+Z to end message
+  lcd.setCursor(0, 1);
+  lcd.print("     "); // Clear previous reading
+  lcd.setCursor(0, 1);
+  lcd.print(airQuality);
 
-    // Optionally, make a call
-    simModule.println("ATD" + String(phoneNumber) + ";");
-
-    // Activate buzzer and LED
-    digitalWrite(buzzerPin, HIGH);
-    digitalWrite(ledPin, HIGH);
+  if (airQuality > airQualityThreshold) {
+    sendSMS("+91123161544", "High air quality alert!");
+    makeCall();
+    activateAlarm();
+    rotateMotor();  
   } else {
-    digitalWrite(buzzerPin, LOW);
-    digitalWrite(ledPin, LOW);
+    deactivateAlarm();
   }
 
-  delay(1000);  // Adjust delay as needed
+  delay(1000); // Adjust delay according to your needs
+}
+
+void sendSMS(String phoneNumber, String message) {
+  sim800l.print("AT+CMGF=1\r");  // Set SMS mode to text
+  delay(5000);
+  sim800l.print("AT+CMGS=\"");
+  sim800l.print(phoneNumber);
+  sim800l.println("\"");
+  delay(5000);
+  sim800l.println(message);
+  delay(5000);
+  sim800l.println((char)26);  // Send SMS command
+  delay(5000);
+}
+
+void makeCall() {
+  sim800l.println("ATD+911231456494890;"); // Replace with your number
+  delay(100); // Adjust the delay based on your needs
+}
+
+void activateAlarm() {
+  digitalWrite(ledPin, HIGH);
+  digitalWrite(buzzerPin, HIGH);
+}
+ void rotateMotor() {
+  motor.write(180);  // Rotate motor 180 degrees
+  delay(500);  // Adjust delay based on motor speed
+  motor.write(0);  // Return motor to initial position (optional)
+}
+void deactivateAlarm() {
+  digitalWrite(ledPin, LOW);
+  digitalWrite(buzzerPin, LOW);
 }
